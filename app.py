@@ -7,8 +7,11 @@ from settings import SECRET_KEY,DATABASE_URL
 import jwt
 import datetime
 from functools import wraps
+from flask_cors import CORS
+
 
 app = Flask(__name__)
+CORS(app, resources={r"/*": {"origins": "*"}})
 app.config.from_pyfile('settings.py')
 app.config['SQLALCHEMY_DATABASE_URI'] =DATABASE_URL
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
@@ -234,4 +237,5 @@ def get_exercises(current_user):
     return jsonify({'exercises': exercise_list}), 200
 
 if __name__ == '__main__':
-    app.run(debug=True, use_reloader=True)
+    app.run(host='0.0.0.0', port=5000, debug=True, use_reloader=True)
+
