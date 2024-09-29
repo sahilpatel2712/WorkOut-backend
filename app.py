@@ -85,7 +85,11 @@ def signup():
 
     token = generate_jwt(new_user.id)
 
-    return jsonify({'message': 'User created successfully!', 'token': token}), 201
+    return jsonify({
+        'message': 'User Sign Up successfully!',
+        'token': token,
+        'username': new_user.username 
+    }), 201
 
 @app.route('/login', methods=['POST'])
 def login():
@@ -100,7 +104,11 @@ def login():
 
     token = generate_jwt(user.id)
 
-    return jsonify({'message': 'Login successful!', 'token': token}), 200
+    return jsonify({
+        'message': 'Login successful!',
+        'token': token,
+        'username': user.username 
+    }), 200
 
 @app.route('/exercise', methods=['POST'])
 @token_required
