@@ -125,22 +125,22 @@ def save_exercise(current_user):
     if not all([age, height, weight, duration, heart_rate, gender, body_temp]):
         return jsonify({'message': 'Missing data'}), 400
 
-    
     exercise_data = pd.DataFrame({
         'Age': age,
         'Height': height,
         'Weight': weight,
         'Duration': duration,
         'Heart_Rate': heart_rate,
-        'Gender':gender.lower(),
+        'Gender': gender.lower(),
         'Body_Temp': body_temp
-    },index=[0])
+    }, index=[0])
 
     try:
         calories = model_pipeline.predict(exercise_data)  
-        calories = calories.tolist()  
+        calories = round(float(calories[0]),2)
     except Exception as e:
         return jsonify({'message': f'Error in prediction: {str(e)}'}), 500
+
     new_exercise = Exercise(
         age=age,
         height=height,
@@ -150,13 +150,12 @@ def save_exercise(current_user):
         gender=gender,
         body_temp=body_temp,
         user_id=current_user.id,
-        calories=calories[0] 
+        calories=calories 
     )
     db.session.add(new_exercise)
     db.session.commit()
 
     return jsonify({'message': 'Exercise data saved successfully!', 'calories': calories}), 201
-
 
 @app.route('/exercise/<int:id>', methods=['PUT'])
 @token_required
@@ -187,7 +186,7 @@ def edit_exercise(current_user, id):
 
     try:
         calories = model_pipeline.predict(exercise_data)  
-        calories = calories.tolist()  
+        calories = round(float(calories[0]),2)
     except Exception as e:
         return jsonify({'message': f'Error in prediction: {str(e)}'}), 500
     exercise.age = age
@@ -197,7 +196,7 @@ def edit_exercise(current_user, id):
     exercise.heart_rate = heart_rate
     exercise.gender = gender
     exercise.body_temp = body_temp
-    exercise.calories = calories[0]
+    exercise.calories = calories
 
     db.session.commit()
 
@@ -221,12 +220,25 @@ def delete_exercise(current_user, id):
 @app.route('/get-exercise', methods=['GET'])
 @token_required
 def get_exercises(current_user):
-    exercises = Exercise.query.filter_by(user_id=current_user.id).all()
+    date_str = request.args.get('date')  
+    if not date_str:
+        return jsonify({'message': 'Date query parameter is missing'}), 400
+
+    try:
+        date_filter = datetime.datetime.strptime(date_str, "%Y-%m-%dT%H:%M:%S.%fZ")
+    except ValueError:
+        return jsonify({'message': 'Invalid date format'}), 400
+
+    exercises = Exercise.query.filter_by(user_id=current_user.id).filter(
+        db.func.date(Exercise.timestamp) == date_filter.date()
+    ).all()
 
     if not exercises:
-        return jsonify({'message': 'No exercise data found for the user'}), 200
+        return jsonify({'message': 'No exercise data found for the given date'}), 200
 
     exercise_list = []
+    total_calories = 0 
+
     for exercise in exercises:
         exercise_data = {
             'id': exercise.id,
@@ -241,8 +253,110 @@ def get_exercises(current_user):
             'timestamp': exercise.timestamp
         }
         exercise_list.append(exercise_data)
+        total_calories += exercise.calories
 
-    return jsonify({'exercises': exercise_list}), 200
+    return jsonify({
+        'exercises': exercise_list,
+        'total_calories': total_calories 
+    }), 200
+
+
+@app.route('/get-graph-data', methods=['POST'])
+@token_required
+def get_calories_data(current_user):
+    data = request.json
+    condition = data.get('condition', 'weekly') 
+
+    if condition not in ['weekly', 'monthly', 'yearly']:
+        return jsonify({'message': 'Invalid condition! Must be weekly, monthly, or yearly.'}), 400
+
+    today = datetime.datetime.utcnow()
+    bar_data = []
+    avg_calories = 0
+    
+    if condition == 'weekly':
+        start_of_week = today - datetime.timedelta(days=today.weekday())  
+        days_passed = (today - start_of_week).days + 1  
+        
+        exercises = Exercise.query.filter(
+            Exercise.user_id == current_user.id,
+            db.func.date(Exercise.timestamp) >= start_of_week.date(),
+            db.func.date(Exercise.timestamp) <= today.date()
+        ).all()
+        
+        week_days = ['M', 'T', 'W', 'T', 'F', 'S', 'S']
+        daily_calories = {i: 0 for i in range(7)} 
+
+        total_calories = 0
+        for exercise in exercises:
+            day_index = exercise.timestamp.weekday() 
+            daily_calories[day_index] += exercise.calories
+            total_calories += exercise.calories
+
+        avg_calories = total_calories / days_passed 
+        
+        for i, day in enumerate(week_days):
+            value = daily_calories[i]
+            front_color = '#177AD5' if value > avg_calories else None
+            bar_data.append({'value': value, 'label': day, 'frontColor': front_color if value > 0 else None})
+    
+    elif condition == 'monthly':
+        start_of_year = today.replace(month=1, day=1)
+        exercises = Exercise.query.filter(
+            Exercise.user_id == current_user.id,
+            db.func.date(Exercise.timestamp) >= start_of_year.date(),
+            db.func.date(Exercise.timestamp) <= today.date()
+        ).all()
+
+        monthly_calories = {i: 0 for i in range(1, 13)}  
+        total_calories = 0
+
+        for exercise in exercises:
+            month = exercise.timestamp.month
+            monthly_calories[month] += exercise.calories
+            if month <= today.month:  
+                total_calories += exercise.calories
+
+        months_passed = today.month
+        avg_calories = total_calories / months_passed
+        
+        for i, month_name in enumerate(['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']):
+            value = monthly_calories[i + 1]
+            front_color = '#177AD5' if i + 1 <= today.month and value > avg_calories else None
+            bar_data.append({'value': value, 'label': month_name, 'frontColor': front_color})
+
+    # elif condition == 'yearly':
+    #     start_of_year = today.replace(month=1, day=1)
+    #     months_passed = today.month  
+        
+    #     exercises = Exercise.query.filter(
+    #         Exercise.user_id == current_user.id,
+    #         db.func.date(Exercise.timestamp) >= start_of_year.date(),
+    #         db.func.date(Exercise.timestamp) <= today.date()
+    #     ).all()
+
+    #     total_calories = 0
+    #     monthly_calories = {i: 0 for i in range(1, 13)}  
+
+    #     for exercise in exercises:
+    #         month = exercise.timestamp.month
+    #         monthly_calories[month] += exercise.calories
+    #         total_calories += exercise.calories
+
+    #     avg_calories = total_calories / months_passed  
+        
+    #     for month in range(1, today.month + 1):
+    #         value = monthly_calories[month]
+    #         front_color = '#177AD5' if value > avg_calories else None
+    #         bar_data.append({'value': value, 'label': f'{today.year}', 'frontColor': front_color})
+
+    #     for month in range(today.month + 1, 13):
+    #         bar_data.append({'value': 0, 'label': f'{today.year}'})
+    
+    return jsonify({
+        'barData': bar_data,
+        'avg_calories': round(avg_calories,2)
+    }), 200
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True, use_reloader=True)
