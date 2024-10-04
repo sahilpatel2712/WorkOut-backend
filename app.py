@@ -358,5 +358,74 @@ def get_calories_data(current_user):
         'avg_calories': round(avg_calories,2)
     }), 200
 
+@app.route('/get-time-data', methods=['POST'])
+@token_required
+def get_time_data(current_user):
+    data = request.json
+    condition = data.get('condition', 'weekly')
+
+    if condition not in ['weekly', 'monthly', 'yearly']:
+        return jsonify({'message': 'Invalid condition! Must be weekly, monthly, or yearly.'}), 400
+
+    today = datetime.datetime.utcnow()
+    bar_data = []
+    avg_time = 0
+
+    if condition == 'weekly':
+        start_of_week = today - datetime.timedelta(days=today.weekday())  
+        days_passed = (today - start_of_week).days + 1  
+
+        exercises = Exercise.query.filter(
+            Exercise.user_id == current_user.id,
+            db.func.date(Exercise.timestamp) >= start_of_week.date(),
+            db.func.date(Exercise.timestamp) <= today.date()
+        ).all()
+
+        week_days = ['M', 'T', 'W', 'T', 'F', 'S', 'S']
+        daily_time = {i: 0 for i in range(7)}  
+
+        total_time = 0
+        for exercise in exercises:
+            day_index = exercise.timestamp.weekday() 
+            daily_time[day_index] += exercise.duration
+            total_time += exercise.duration
+
+        avg_time = total_time / days_passed  
+
+        for i, day in enumerate(week_days):
+            value = daily_time[i]
+            front_color = '#177AD5' if value > avg_time else None
+            bar_data.append({'value': round(value, 2), 'label': day, 'frontColor': front_color if value > 0 else None})
+
+    elif condition == 'monthly':
+        start_of_year = today.replace(month=1, day=1)
+        exercises = Exercise.query.filter(
+            Exercise.user_id == current_user.id,
+            db.func.date(Exercise.timestamp) >= start_of_year.date(),
+            db.func.date(Exercise.timestamp) <= today.date()
+        ).all()
+
+        monthly_time = {i: 0 for i in range(1, 13)}  
+        total_time = 0
+
+        for exercise in exercises:
+            month = exercise.timestamp.month
+            monthly_time[month] += exercise.duration
+            if month <= today.month:  
+                total_time += exercise.duration
+
+        months_passed = today.month
+        avg_time = total_time / months_passed
+
+        for i, month_name in enumerate(['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']):
+            value = monthly_time[i + 1]
+            front_color = '#177AD5' if i + 1 <= today.month and value > avg_time else None
+            bar_data.append({'value': round(value, 2), 'label': month_name, 'frontColor': front_color})
+
+    return jsonify({
+        'barData': bar_data,
+        'avg_time': round(avg_time, 2)
+    }), 200
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=False, use_reloader=False)
