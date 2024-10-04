@@ -173,7 +173,7 @@ def edit_exercise(current_user, id):
     heart_rate = data.get('heart_rate', exercise.heart_rate)
     gender = data.get('gender', exercise.gender)
     body_temp = data.get('body_temp', exercise.body_temp)
-
+    timestamp =  exercise.timestamp 
     exercise_data = pd.DataFrame({
         'Age': age,
         'Height': height,
@@ -197,6 +197,7 @@ def edit_exercise(current_user, id):
     exercise.gender = gender
     exercise.body_temp = body_temp
     exercise.calories = calories
+    exercise.timestamp = datetime.datetime.strptime(timestamp, "%Y-%m-%dT%H:%M:%S.%fZ") if isinstance(timestamp, str) else exercise.timestamp
 
     db.session.commit()
 
@@ -257,7 +258,7 @@ def get_exercises(current_user):
 
     return jsonify({
         'exercises': exercise_list,
-        'total_calories': total_calories 
+        'total_calories': round(total_calories,2) 
     }), 200
 
 
@@ -298,7 +299,7 @@ def get_calories_data(current_user):
         for i, day in enumerate(week_days):
             value = daily_calories[i]
             front_color = '#177AD5' if value > avg_calories else None
-            bar_data.append({'value': value, 'label': day, 'frontColor': front_color if value > 0 else None})
+            bar_data.append({'value': round(value,2), 'label': day, 'frontColor': front_color if value > 0 else None})
     
     elif condition == 'monthly':
         start_of_year = today.replace(month=1, day=1)
@@ -323,7 +324,7 @@ def get_calories_data(current_user):
         for i, month_name in enumerate(['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']):
             value = monthly_calories[i + 1]
             front_color = '#177AD5' if i + 1 <= today.month and value > avg_calories else None
-            bar_data.append({'value': value, 'label': month_name, 'frontColor': front_color})
+            bar_data.append({'value': round(value,2), 'label': month_name, 'frontColor': front_color})
 
     # elif condition == 'yearly':
     #     start_of_year = today.replace(month=1, day=1)
@@ -352,12 +353,10 @@ def get_calories_data(current_user):
 
     #     for month in range(today.month + 1, 13):
     #         bar_data.append({'value': 0, 'label': f'{today.year}'})
-    
     return jsonify({
         'barData': bar_data,
         'avg_calories': round(avg_calories,2)
     }), 200
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True, use_reloader=True)
-
+    app.run(host='0.0.0.0', port=5000, debug=True, use_reloader=False)
